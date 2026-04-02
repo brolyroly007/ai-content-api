@@ -6,7 +6,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from database.repositories import log_usage, save_generated_content
 from export import export_content
@@ -22,12 +22,34 @@ class GenerateRequest(BaseModel):
     """Request body for content generation."""
 
     template_id: str
-    variables: dict
+    variables: dict[str, str] = {}
     provider: str | None = None
     stream: bool = False
     temperature: float = 0.7
     max_tokens: int = 2000
     export_format: str = "markdown"
+
+    @field_validator("template_id")
+    @classmethod
+    def template_id_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("template_id must not be empty")
+        return v.strip()
+
+    @field_validator("variables")
+    @classmethod
+    def validate_variable_values(cls, v: dict[str, str]) -> dict[str, str]:
+        for key, val in v.items():
+            if not isinstance(val, str):
+                raise ValueError(
+                    f"Variable '{key}' must be a string, got {type(val).__name__}"
+                )
+            if len(val) > 5000:
+                raise ValueError(
+                    f"Variable '{key}' exceeds max length of 5000 characters "
+                    f"({len(val)} chars)"
+                )
+        return v
 
 
 @router.post("/generate")
@@ -39,13 +61,24 @@ async def generate_content(req: GenerateRequest, api_key: dict = Depends(get_api
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
-    # Validate required fields
-    for field in template.fields:
-        if field.required and field.name not in req.variables:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Missing required field: '{field.name}' for template '{template.id}'",
-            )
+    # Validate variables against template fields
+    valid_field_names = {f.name for f in template.fields}
+    unknown_keys = set(req.variables.keys()) - valid_field_names
+    if unknown_keys:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown variables for template '{template.id}': {sorted(unknown_keys)}. "
+            f"Valid fields: {sorted(valid_field_names)}",
+        )
+
+    missing_required = [
+        f.name for f in template.fields if f.required and f.name not in req.variables
+    ]
+    if missing_required:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Missing required fields for template '{template.id}': {sorted(missing_required)}",
+        )
 
     # Build prompt from template
     variables_with_defaults = {}
