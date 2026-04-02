@@ -19,16 +19,17 @@ from loguru import logger
 
 from api import router as api_router
 from config import settings
-from database import init_db
+from database import close_db, init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
+    """Initialize database on startup, close on shutdown."""
     logger.info("Starting AI Content API...")
     await init_db()
     logger.info("Database initialized")
     yield
+    await close_db()
     logger.info("Shutting down AI Content API")
 
 
