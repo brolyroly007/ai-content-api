@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     ollama_model: str = Field(default="llama3.2")
     default_provider: str = Field(default="openai")
 
+    # Streaming
+    stream_timeout: int = Field(default=120, description="SSE stream timeout in seconds")
+
     # Rate Limiting
     default_rate_limit: int = Field(default=60)
     default_daily_limit: int = Field(default=1000)

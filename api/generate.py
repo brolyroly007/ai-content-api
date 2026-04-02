@@ -1,6 +1,7 @@
 """Content generation endpoint with SSE streaming support."""
 
 import json
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -11,6 +12,7 @@ from database.repositories import log_usage, save_generated_content
 from export import export_content
 from middleware import get_api_key
 from providers import get_provider
+from config import settings
 from templates import get_template
 
 router = APIRouter()
@@ -116,6 +118,8 @@ async def generate_content(req: GenerateRequest, api_key: dict = Depends(get_api
 async def _stream_generation(provider, prompt, system_prompt, api_key, req):
     """SSE generator for streaming responses."""
     full_content = []
+    start = time.monotonic()
+    timeout = settings.stream_timeout
     try:
         async for chunk in provider.stream(
             prompt,
@@ -123,6 +127,11 @@ async def _stream_generation(provider, prompt, system_prompt, api_key, req):
             temperature=req.temperature,
             max_tokens=req.max_tokens,
         ):
+            elapsed = time.monotonic() - start
+            if elapsed > timeout:
+                logger.warning(f"Stream timeout after {elapsed:.1f}s (limit={timeout}s)")
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Stream timeout exceeded'})}\n\n"
+                return
             full_content.append(chunk)
             yield f"data: {json.dumps({'chunk': chunk})}\n\n"
 
