@@ -13,6 +13,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS api_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     key TEXT UNIQUE NOT NULL,
+    key_prefix TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     rate_limit INTEGER DEFAULT 60,
     daily_limit INTEGER DEFAULT 1000,
@@ -61,6 +62,13 @@ async def init_db():
     db = await get_db()
     try:
         await db.executescript(SCHEMA)
+        # Migration: add key_prefix column if missing (existing databases)
+        cursor = await db.execute("PRAGMA table_info(api_keys)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        if "key_prefix" not in columns:
+            await db.execute(
+                "ALTER TABLE api_keys ADD COLUMN key_prefix TEXT NOT NULL DEFAULT ''"
+            )
         await db.commit()
         logger.info(f"Database initialized at {DB_PATH}")
     finally:

@@ -27,7 +27,11 @@ async def get_api_key(api_key: str | None = Depends(API_KEY_HEADER)) -> dict:
     if not key_data:
         raise HTTPException(status_code=403, detail="Invalid or deactivated API key.")
 
-    within_limits = await check_rate_limit(api_key, key_data["rate_limit"], key_data["daily_limit"])
+    # Use the stored hash (key_data["key"]) for rate limit lookup, since
+    # usage_logs now stores the hashed key as the identifier.
+    within_limits = await check_rate_limit(
+        key_data["key"], key_data["rate_limit"], key_data["daily_limit"]
+    )
     if not within_limits:
         raise HTTPException(status_code=429, detail="Rate limit exceeded. Try again later.")
 

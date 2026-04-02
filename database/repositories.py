@@ -1,26 +1,35 @@
 """CRUD operations for all database tables."""
 
+import hashlib
 import json
 import secrets
 from datetime import datetime, timedelta
 
 from database.connection import get_db
 
+
+def _hash_key(key: str) -> str:
+    """Hash an API key using SHA-256."""
+    return hashlib.sha256(key.encode()).hexdigest()
+
 # ── API Keys ──────────────────────────────────────────────
 
 
 async def create_api_key(name: str, rate_limit: int = 60, daily_limit: int = 1000) -> dict:
-    """Create a new API key."""
-    key = f"ak_{secrets.token_hex(24)}"
+    """Create a new API key. Returns the plain key (shown only once) but stores only the hash."""
+    plain_key = f"ak_{secrets.token_hex(24)}"
+    key_hash = _hash_key(plain_key)
+    key_prefix = plain_key[:8]
     db = await get_db()
     try:
         await db.execute(
-            "INSERT INTO api_keys (key, name, rate_limit, daily_limit) VALUES (?, ?, ?, ?)",
-            (key, name, rate_limit, daily_limit),
+            "INSERT INTO api_keys (key, key_prefix, name, rate_limit, daily_limit) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (key_hash, key_prefix, name, rate_limit, daily_limit),
         )
         await db.commit()
         return {
-            "key": key,
+            "key": plain_key,
             "name": name,
             "rate_limit": rate_limit,
             "daily_limit": daily_limit,
@@ -30,10 +39,13 @@ async def create_api_key(name: str, rate_limit: int = 60, daily_limit: int = 100
 
 
 async def validate_api_key(key: str) -> dict | None:
-    """Validate an API key and return its data."""
+    """Validate an API key and return its data. Hashes the incoming key before lookup."""
+    key_hash = _hash_key(key)
     db = await get_db()
     try:
-        cursor = await db.execute("SELECT * FROM api_keys WHERE key = ? AND is_active = 1", (key,))
+        cursor = await db.execute(
+            "SELECT * FROM api_keys WHERE key = ? AND is_active = 1", (key_hash,)
+        )
         row = await cursor.fetchone()
         return dict(row) if row else None
     finally:
@@ -41,11 +53,11 @@ async def validate_api_key(key: str) -> dict | None:
 
 
 async def list_api_keys() -> list[dict]:
-    """List all API keys (without the full key for security)."""
+    """List all API keys (showing only the prefix for security)."""
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT id, substr(key, 1, 10) || '...' as key_preview, name, "
+            "SELECT id, key_prefix || '...' as key_preview, name, "
             "rate_limit, daily_limit, is_active, created_at FROM api_keys ORDER BY id DESC"
         )
         rows = await cursor.fetchall()
@@ -55,10 +67,11 @@ async def list_api_keys() -> list[dict]:
 
 
 async def delete_api_key(key: str) -> bool:
-    """Deactivate an API key."""
+    """Deactivate an API key. Accepts the plain key and hashes before lookup."""
+    key_hash = _hash_key(key)
     db = await get_db()
     try:
-        cursor = await db.execute("UPDATE api_keys SET is_active = 0 WHERE key = ?", (key,))
+        cursor = await db.execute("UPDATE api_keys SET is_active = 0 WHERE key = ?", (key_hash,))
         await db.commit()
         return cursor.rowcount > 0
     finally:
