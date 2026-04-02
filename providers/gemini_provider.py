@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 import google.generativeai as genai
 from loguru import logger
 
-from providers.base import BaseProvider, GenerationResult
+from providers.base import BaseProvider, GenerationResult, retry_with_backoff
 
 
 class GeminiProvider(BaseProvider):
@@ -34,8 +34,9 @@ class GeminiProvider(BaseProvider):
         max_tokens: int = 2000,
     ) -> GenerationResult:
         """Generate content using Gemini API."""
-        try:
-            model = self._get_model(system_prompt)
+        model = self._get_model(system_prompt)
+
+        async def _call():
             response = await model.generate_content_async(
                 prompt,
                 generation_config=genai.GenerationConfig(
@@ -55,6 +56,9 @@ class GeminiProvider(BaseProvider):
                 tokens_used=tokens_used,
                 finish_reason="stop",
             )
+
+        try:
+            return await retry_with_backoff(_call)
         except Exception as e:
             logger.error(f"Gemini API error: {e}")
             raise

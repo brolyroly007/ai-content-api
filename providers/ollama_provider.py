@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 import httpx
 from loguru import logger
 
-from providers.base import BaseProvider, GenerationResult
+from providers.base import BaseProvider, GenerationResult, retry_with_backoff
 
 
 class OllamaProvider(BaseProvider):
@@ -38,7 +38,7 @@ class OllamaProvider(BaseProvider):
         if system_prompt:
             payload["system"] = system_prompt
 
-        try:
+        async def _call():
             async with httpx.AsyncClient(timeout=120.0) as client:
                 response = await client.post(
                     f"{self.base_url}/api/generate",
@@ -56,6 +56,9 @@ class OllamaProvider(BaseProvider):
                     tokens_used=tokens_used,
                     finish_reason="stop" if data.get("done") else "length",
                 )
+
+        try:
+            return await retry_with_backoff(_call)
         except httpx.HTTPError as e:
             logger.error(f"Ollama API error: {e}")
             raise

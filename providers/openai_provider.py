@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 import openai
 from loguru import logger
 
-from providers.base import BaseProvider, GenerationResult
+from providers.base import BaseProvider, GenerationResult, retry_with_backoff
 
 
 class OpenAIProvider(BaseProvider):
@@ -31,7 +31,7 @@ class OpenAIProvider(BaseProvider):
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        try:
+        async def _call():
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -45,6 +45,9 @@ class OpenAIProvider(BaseProvider):
                 tokens_used=response.usage.total_tokens if response.usage else 0,
                 finish_reason=response.choices[0].finish_reason or "stop",
             )
+
+        try:
+            return await retry_with_backoff(_call)
         except openai.APIError as e:
             logger.error(f"OpenAI API error: {e}")
             raise
