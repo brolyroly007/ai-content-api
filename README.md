@@ -36,10 +36,14 @@ Open-source REST API that generates content using **OpenAI GPT**, **Google Gemin
 
 - **Multi-LLM Support** - Switch between OpenAI, Gemini, and Ollama per request
 - **8 Content Templates** - Blog posts, social media, emails, SEO meta, ad copy, tweet threads, YouTube descriptions, product descriptions
-- **SSE Streaming** - Real-time streaming generation with Server-Sent Events
-- **API Key Management** - Create, manage, and track API keys with per-key rate limits
+- **SSE Streaming** - Real-time streaming with configurable timeout (default 120s)
+- **API Key Security** - Keys are hashed (SHA-256) at rest; plain key shown only once on creation
 - **Rate Limiting** - Per-minute and daily request limits per API key
 - **Usage Analytics** - Track requests, tokens, and provider usage per key
+- **Input Validation** - Template variable validation with max lengths and unknown field rejection
+- **Auto-Retry** - Exponential backoff on transient LLM errors (rate limits, timeouts, 5xx)
+- **Connection Pooling** - Singleton SQLite connection with WAL mode for better performance
+- **Health Checks** - Deep health endpoint verifying database and each provider's availability
 - **Web Dashboard** - Dark-themed UI for testing templates and managing keys
 - **Export Formats** - Markdown, plain text, or JSON output
 - **Docker Ready** - Docker Compose setup with Ollama included
@@ -177,7 +181,7 @@ curl -N -X POST http://localhost:8000/api/generate \
 | `GET` | `/api/keys/{key}/history` | No | Recent generations |
 | `DELETE` | `/api/keys/{key}` | No | Deactivate key |
 | `GET` | `/api/providers` | No | List LLM providers |
-| `GET` | `/api/health` | No | Health check |
+| `GET` | `/api/health` | No | Deep health check (DB + providers) |
 | `GET` | `/` | No | Web dashboard |
 
 ## Architecture
@@ -227,8 +231,11 @@ ai-content-api/
 | `DEFAULT_PROVIDER` | `openai` | Default LLM provider |
 | `DEFAULT_RATE_LIMIT` | `60` | Requests per minute per key |
 | `DEFAULT_DAILY_LIMIT` | `1000` | Requests per day per key |
+| `STREAM_TIMEOUT` | `120` | SSE stream timeout in seconds |
 
 See `.env.example` for all options.
+
+> **Note on API Keys**: Keys are hashed with SHA-256 before storage. The plain key is returned **only once** at creation time — store it securely. Existing keys from before v1.1 will need to be recreated.
 
 ## Tech Stack
 
@@ -274,6 +281,12 @@ make run-dev
 - [x] Web dashboard
 - [x] Docker + Ollama support
 - [x] CI/CD pipeline
+- [x] API key hashing (SHA-256 at rest)
+- [x] Auto-retry with exponential backoff for LLM calls
+- [x] SSE stream timeout
+- [x] Input validation on generate endpoint
+- [x] Singleton DB connection with WAL mode
+- [x] Deep health checks (DB + provider connectivity)
 - [ ] Custom template creation via API
 - [ ] Prompt history and favorites
 - [ ] Webhook notifications
